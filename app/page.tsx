@@ -143,42 +143,12 @@ export default function TempoIlha() {
                     </p>
 
                     <section className="grid grid-cols-2 sm:grid-cols-3 gap-4 md:gap-8">
-                        <CardClimaticoAtual
-                            nome="Temperatura"
-                            dado={Temperatura}
-                            unidade="°C"
-                            descricao={carregando ? "Carregando..." : "Buscando temperatura..."}
-                        />
-                        <CardClimaticoAtual
-                            nome="Sensação Térmica"
-                            dado={tempAparente}
-                            unidade="°C"
-                            descricao={carregando ? "Carregando..." : "Buscando sensação térmica..."}
-                        />
-                        <CardClimaticoAtual
-                            nome="Umidade"
-                            dado={Umidade}
-                            unidade="%"
-                            descricao={carregando ? "Carregando..." : "Buscando umidade..."}
-                        />
-                        <CardClimaticoAtual
-                            nome="Velocidade do Vento"
-                            dado={velocidadeVento}
-                            unidade=" km/h"
-                            descricao={carregando ? "Carregando..." : "Buscando velocidade do vento..."}
-                        />
-                        <CardClimaticoAtual
-                            nome="Precipitação"
-                            dado={Precipitação}
-                            unidade=" mm"
-                            descricao={carregando ? "Carregando..." : "Buscando precipitação..."}
-                        />
-                        <CardClimaticoAtual
-                            nome="Chuva"
-                            dado={Chuva}
-                            unidade=" mm"
-                            descricao={carregando ? "Carregando..." : "Buscando chuva..."}
-                        />
+                        <CardClimaticoAtual nome="Temperatura" dado={Temperatura} unidade="°C" descricao={carregando ? "Carregando..." : "Buscando temperatura..."} />
+                        <CardClimaticoAtual nome="Sensação Térmica" dado={tempAparente} unidade="°C" descricao={carregando ? "Carregando..." : "Buscando sensação térmica..."} />
+                        <CardClimaticoAtual nome="Umidade" dado={Umidade} unidade="%" descricao={carregando ? "Carregando..." : "Buscando umidade..."} />
+                        <CardClimaticoAtual nome="Velocidade do Vento" dado={velocidadeVento} unidade=" km/h" descricao={carregando ? "Carregando..." : "Buscando velocidade do vento..."} />
+                        <CardClimaticoAtual nome="Precipitação" dado={Precipitação} unidade=" mm" descricao={carregando ? "Carregando..." : "Buscando precipitação..."} />
+                        <CardClimaticoAtual nome="Chuva" dado={Chuva} unidade=" mm" descricao={carregando ? "Carregando..." : "Buscando chuva..."} />
                     </section>
                 </div>
             </section>
@@ -198,7 +168,11 @@ export default function TempoIlha() {
                 </div>
                 
                 <div className="max-w-5xl mx-auto">
-                    <MapaTermico dados={historicoClimatico} />
+                    <MapaTermico 
+                        dados={historicoClimatico} 
+                        tipo="temperature_2m" 
+                        descricao="Mapa Térmico" 
+                    />
                 </div>
             </section>
         </>
