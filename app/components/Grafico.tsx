@@ -19,17 +19,17 @@ interface OpenMeteoData {
     };
 }
 
-interface GraficoLinhaProps {    
+interface GraficoProps {    
     dados: OpenMeteoData;
     tipo: 'temperature_2m' | 'relative_humidity_2m' | 'rain' | 'apparent_temperature' | 'precipitation_probability' | string;
-    descrisao: string;
+    descricao: string;
 }  
 
-export default function GraficoLinha({ dados, tipo, descrisao }: GraficoLinhaProps) {    
+export default function Grafico({ dados, tipo, descricao }: GraficoProps) {    
     if (!dados || !dados.hourly || !dados.hourly.time || !dados.hourly[tipo]) {
         return (
             <div className="flex h-64 md:h-80 w-full items-center justify-center p-4 text-[#64748b] bg-white border border-[#e2e8f0] rounded-3xl">
-                Carregando dados de {descrisao.toLowerCase()}...
+                Carregando dados de {descricao.toLowerCase()}...
             </div>
         );
     }
@@ -57,7 +57,7 @@ export default function GraficoLinha({ dados, tipo, descrisao }: GraficoLinhaPro
     return (        
         <div className="w-full bg-white border-2 border-[#1e40af] rounded-3xl p-5 md:p-8 shadow-md">
             <h3 className="text-xl md:text-2xl font-semibold text-[#1e3a8a] mb-6 text-center font-serif tracking-wide">
-                {descrisao}
+                {descricao}
             </h3>
             
             <div className="h-72 sm:h-80 md:h-96"> {/* Altura responsiva */}
@@ -100,7 +100,7 @@ export default function GraficoLinha({ dados, tipo, descrisao }: GraficoLinhaPro
                                 boxShadow: '0 10px 15px -3px rgb(30 58 138 / 0.1)',
                                 fontSize: '14px'
                             }}
-                            formatter={(value: any) => [`${value}${unidade}`, descrisao]}
+                            formatter={(value: any) => [`${value}${unidade}`, descricao]}
                             labelFormatter={(label) => `Horário: ${label}`}
                         />            
                         <Legend 
@@ -111,7 +111,7 @@ export default function GraficoLinha({ dados, tipo, descrisao }: GraficoLinhaPro
                             }} 
                         />            
                         <Line            
-                            name={descrisao}
+                            name={descricao}
                             type="natural"            
                             dataKey="valor"
                             stroke="#1e40af"              

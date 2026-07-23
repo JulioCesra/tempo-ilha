@@ -1,202 +1,200 @@
 'use client';
+
+// Importação dos hooks do React
 import { useState, useEffect } from 'react';
-import CardClimaticoAtual from './componentes/cardClimaticosAtuais';
-import GraficoLinha from './componentes/graficoLinha';
-import MapaTermico from './componentes/MapaTermico';
 
-function localidadeUsuario(setLat: (v: number) => void, setLng: (v: number) => void) {
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition((position) => {
-            setLat(position.coords.latitude);
-            setLng(position.coords.longitude);
-        });
-    }
+// Importação dos componentes da interface
+import Home from './components/Home';
+import Aviso from './components/Aviso';
+import SeletorAbas from './components/SeletorAbas';
+import Rodape from './components/Rodape';
+import ParaVoce from './components/ParaVoce';
+import ParaPescadores from './components/ParaPescadores';
+
+// Importação dos serviços e funções utilitárias
+import { getHistoricoMaritimo } from '@/services/mar';
+import { coordenadasUsuario, getMunicipioDoUsuario, getBairroDoUsuario } from '@/services/usuario';
+import { getHistoricoClimatico, getMediaHistoricaTemperaturaEChuva, getInformacoesClimaticasAtuais } from '@/services/clima';
+import { indiceHorarioAtual } from '@/utils/utilidades';
+import { formatarHorarioPraia } from '@/services/praia';
+
+/**
+ * Avalia o vento atual e futuro para definir a segurança da pesca.
+ */
+function calcularCondicaoPesca(informacoesAtuais: any, ventoProximasHoras: number[]) {
+    // Pega a velocidade atual do vento ou define como nulo
+    const ventoAtual = informacoesAtuais?.["Velocidade do vento"] ?? null;
+    if (ventoAtual === null) return { nivel: "Sem dados", mensagem: "Aguardando dados de vento." };
+
+    // Identifica o vento mais forte nas próximas horas
+    const ventoMaximo = ventoProximasHoras.length ? Math.max(...ventoProximasHoras) : ventoAtual;
+
+    // Regras de decisão baseadas na velocidade do vento
+    if (ventoMaximo >= 40) return { nivel: "Não recomendado", mensagem: "Ventos fortes previstos — evite sair pra pescar." };
+    if (ventoMaximo >= 25) return { nivel: "Atenção", mensagem: "Vento moderado a forte — redobre o cuidado no mar." };
+    return { nivel: "Condições seguras", mensagem: "Vento fraco a moderado — condições favoráveis." };
 }
 
-async function municipioUsuario(latitude: number, longitude: number): Promise<string> {
-    if (!latitude || !longitude) return "Latitude ou Longitude não apresentam valores corretos";
-    const URL = `https://api-bdc.io/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=pt`;
-    try {
-        const resposta = await fetch(URL);
-        if (!resposta.ok) throw new Error("Falha ao buscar município do usuário");
-        const dados = await resposta.json();
-        return dados.city || dados.locality || "sua região";
-    } catch (erro) {
-        console.log(erro);
-        return "Erro na requisição do município";
-    }
-}
+/**
+ * Calcula a probabilidade de alagamento cruzando chuva acumulada e altura da maré.
+ */
+function calcularRiscoAlagamento(historicoClimatico: any, historicoMaritimo: any) {
+    // Extrai dados climáticos e marítimos (variáveis traduzidas para o português)
+    const listaChuva: number[] = historicoClimatico.hourly?.rain || [];
+    const listaHorarios: string[] = historicoClimatico.hourly?.time || [];
+    const alturasOnda: number[] = historicoMaritimo.hourly?.wave_height || [];
+    const listaHorariosMar: string[] = historicoMaritimo.hourly?.time || [];
 
-async function buscarHistorico(latitude: number, longitude: number): Promise<any> {
-    if (!latitude || !longitude) return {};
-    const URL = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,relative_humidity_2m,rain,apparent_temperature,precipitation_probability&timezone=GMT`;
-    try {
-        const resposta = await fetch(URL);
-        if (!resposta.ok) throw new Error("Falha ao buscar histórico dos dados climáticos");
-        const dados = await resposta.json();
-        return dados;
-    } catch (erro) {
-        console.log(erro);
-        return {};
-    }
-}
+    if (!listaChuva.length) return { nivel: "Sem dados", pontuacao: 0 };
 
-interface InformacoesClimaticas {
-    Temperatura?: number;
-    Umidade?: number;
-    Precipitação?: number;
-    Chuva?: number;
-    "Velocidade do vento"?: number;
-    "Temperatura Aparente"?: number;
-    Condição?: string;
-}
+    // Relaciona cada horário com a sua respectiva altura de maré
+    const marePorHorario: Record<string, number> = {};
+    listaHorariosMar.forEach((horario, indice) => { 
+        marePorHorario[horario] = alturasOnda[indice]; 
+    });
 
-async function buscarInformacoesClimaticasAtuais(latitude: number, longitude: number): Promise<InformacoesClimaticas> {
-    if (!latitude || !longitude) return {};
-    const URL = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,wind_speed_10m&timezone=GMT`;
-    try {
-        const resposta = await fetch(URL);
-        if (!resposta.ok) throw new Error("Falha ao buscar dados climáticos atuais");
-        const dados = await resposta.json();
-        return {
-            Temperatura: dados.current.temperature_2m,
-            Umidade: dados.current.relative_humidity_2m,
-            Precipitação: dados.current.precipitation,
-            Chuva: dados.current.rain,
-            "Velocidade do vento": dados.current.wind_speed_10m,
-            "Temperatura Aparente": dados.current.apparent_temperature
-        };
-    } catch (erro) {
-        console.log(erro);
-        return {};
-    }
+    // Encontra a hora atual e calcula chuvas recente e acumulada
+    const indiceAtual = indiceHorarioAtual(listaHorarios);
+    const chuvaUltimaHora = listaChuva[indiceAtual] || 0;
+    const inicioJanela = Math.max(0, indiceAtual - 6);
+    const chuvaAcumulada6h = listaChuva.slice(inicioJanela, indiceAtual + 1).reduce((soma, valor) => soma + (valor || 0), 0);
+    const mareAtual = marePorHorario[listaHorarios[indiceAtual]] ?? 0;
+
+    // Fórmula do cálculo do risco (pesos para chuva recente, acumulada e maré)
+    const pontuacao = chuvaUltimaHora * 2 + chuvaAcumulada6h * 1 + mareAtual * 3;
+
+    // Categorização do risco
+    let nivel = "Baixo";
+    if (pontuacao > 15) nivel = "Alto";
+    else if (pontuacao > 7) nivel = "Moderado";
+
+    return { nivel, pontuacao: Math.round(pontuacao * 10) / 10 };
 }
 
 export default function TempoIlha() {
-    const [latitudeUsuario, setLatitudeUsuario] = useState<number>(0);
-    const [longitudeUsuario, setLongitudeUsuario] = useState<number>(0);
-    const [municipio, setMunicipio] = useState<string>("");
-    const [informacoesClimaticasAtuais, setInformacoesClimaticasAtuais] = useState<InformacoesClimaticas>({});
-    const [historicoClimatico, setHistoricoClimatico] = useState<any>({});
+    // --- ESTADOS DO COMPONENTE ---
     const [carregando, setCarregando] = useState<boolean>(true);
 
+    // Dados de localização do usuário
+    const [latitudeUsuario, setLatitudeUsuario] = useState<number>(0.0);
+    const [longitudeUsuario, setLongitudeUsuario] = useState<number>(0.0);
+    const [municipioUsuario, setMunicipioUsuario] = useState<string>("");
+    const [bairroUsuario, setBairroUsuario] = useState<string>("");
+
+    // Dados meteorológicos e marítimos
+    const [informacoesClimaticasAtuais, setInformacoesClimaticasAtuais] = useState<any>({});
+    const [historicoClimatico, setHistoricoClimatico] = useState<any>({});
+    const [historicoMaritimo, setHistoricoMaritimo] = useState<any>({});
+    const [mediasHistoricas, setMediasHistoricas] = useState<{ temperaturaMedia: number | null; chuvaTotalMedia: number | null }>({ temperaturaMedia: null, chuvaTotalMedia: null });
+
+    // Resultados calculados
+    const [melhorHoraPraiaFormatada, setMelhorHoraPraiaFormatada] = useState<string>("");
+    const [riscoAlagamento, setRiscoAlagamento] = useState<{ nivel: string; pontuacao: number }>({ nivel: "Sem dados", pontuacao: 0 });
+    const [condicaoPesca, setCondicaoPesca] = useState<{ nivel: string; mensagem: string }>({ nivel: "Sem dados", mensagem: "" });
+
+    // Estado para navegação por abas
+    const [abaAtiva, setAbaAtiva] = useState<string>("geral");
+
+    // 1. Obtém as coordenadas GPS do usuário logo ao carregar o componente
     useEffect(() => {
-        localidadeUsuario(setLatitudeUsuario, setLongitudeUsuario);
+        coordenadasUsuario(setLatitudeUsuario, setLongitudeUsuario);
     }, []);
 
+    // 2. Busca todas as informações das APIs assim que as coordenadas forem encontradas
     useEffect(() => {
         if (latitudeUsuario !== 0 && longitudeUsuario !== 0) {
             setCarregando(true);
             Promise.all([
-                municipioUsuario(latitudeUsuario, longitudeUsuario),
-                buscarInformacoesClimaticasAtuais(latitudeUsuario, longitudeUsuario),
-                buscarHistorico(latitudeUsuario, longitudeUsuario)
-            ]).then(([nomeMunicipio, climaAtual, historico]) => {
-                setMunicipio(nomeMunicipio);
+                getMunicipioDoUsuario(latitudeUsuario, longitudeUsuario),
+                getBairroDoUsuario(latitudeUsuario, longitudeUsuario),
+                getInformacoesClimaticasAtuais(latitudeUsuario, longitudeUsuario),
+                getHistoricoClimatico(latitudeUsuario, longitudeUsuario),
+                getHistoricoMaritimo(),
+                getMediaHistoricaTemperaturaEChuva(latitudeUsuario, longitudeUsuario),
+            ]).then(([municipio, bairro, climaAtual, historicoClima, historicoMar, mediasHist]) => {
+                setMunicipioUsuario(municipio);
+                setBairroUsuario(bairro);
                 setInformacoesClimaticasAtuais(climaAtual);
-                setHistoricoClimatico(historico);
+                setHistoricoClimatico(historicoClima);
+                setHistoricoMaritimo(historicoMar);
+                setMediasHistoricas(mediasHist);
                 setCarregando(false);
-            }).catch(err => {
-                console.error("Erro ao buscar dados climáticos", err);
+            }).catch(erro => {
+                console.error("Erro ao buscar dados", erro);
                 setCarregando(false);
             });
         }
     }, [latitudeUsuario, longitudeUsuario]);
 
-    const {
-        Temperatura,
-        Umidade,
-        Precipitação,
-        Chuva,
-        "Velocidade do vento": velocidadeVento,
-        "Temperatura Aparente": tempAparente
-    } = informacoesClimaticasAtuais;
+    // 3. Processa análises (melhor hora para praia, alagamento e pesca) quando os dados atualizam
+    useEffect(() => {
+        const alturasOnda = historicoMaritimo.hourly?.wave_height || [];
+        const listaHorariosMare = historicoMaritimo.hourly?.time || [];
+        const listaChuva: number[] = historicoClimatico.hourly?.rain || [];
+        const listaHorariosChuva: string[] = historicoClimatico.hourly?.time || [];
 
+        // Mapeia chuva por horário
+        const chuvaPorHorario: Record<string, number> = {};
+        listaHorariosChuva.forEach((horario, indice) => { 
+            chuvaPorHorario[horario] = listaChuva[indice]; 
+        });
+
+        // Procura a menor maré em um momento que NÃO esteja chovendo
+        const mareBaixa = alturasOnda.length ? Math.min(...alturasOnda) : null;
+        for (let i = 0; i < alturasOnda.length; i++) {
+            const alturaMare = alturasOnda[i];
+            const horario = listaHorariosMare[i];
+            const chuva = chuvaPorHorario[horario];
+            
+            if (alturaMare === mareBaixa && (chuva === 0 || chuva === undefined)) {
+                setMelhorHoraPraiaFormatada(formatarHorarioPraia(horario));
+                break;
+            }
+        }
+
+        // Atualiza os estados de alagamento e pesca
+        setRiscoAlagamento(calcularRiscoAlagamento(historicoClimatico, historicoMaritimo));
+
+        const listaVento: number[] = historicoClimatico.hourly?.wind_speed_10m || [];
+        setCondicaoPesca(calcularCondicaoPesca(informacoesClimaticasAtuais, listaVento.slice(0, 12)));
+    }, [historicoMaritimo, historicoClimatico, informacoesClimaticasAtuais]);
+
+    // Renderização visual da aplicação
     return (
         <>
-            <section className="w-full min-h-screen bg-[radial-gradient(#1e3a8a_0.8px,transparent_1px)] bg-[length:20px_20px] flex justify-center items-center relative overflow-hidden px-4">
-                <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none"></div>
-                
-                <article className="p-8 md:p-12 bg-white/95 backdrop-blur-md border-4 border-[#1e40af] rounded-3xl shadow-2xl text-center max-w-xl relative z-10">
-                    <div className="inline-block mb-6 px-6 py-2 bg-[#1e40af] text-white text-sm tracking-widest rounded-full border border-[#60a5fa]">
-                        ILHA DO MARANHÃO
-                    </div>
-                    <h1 className="text-5xl md:text-6xl font-serif font-bold text-[#1e3a8a] tracking-tight mb-4">
-                        Tempo Ilha
-                    </h1>
-                    <p className="text-lg md:text-xl text-gray-700">
-                        Informações climáticas em tempo real de qualquer município da Ilha
-                    </p>
-                </article>
-            </section>
+            <Home />
+            <Aviso />
+            <SeletorAbas setAbaAtiva={setAbaAtiva} abaAtiva={abaAtiva} />
 
-            <section className="flex flex-col justify-center items-center py-12 md:py-16 bg-[#f8fafc]">
-                <div className="max-w-5xl w-full px-4 md:px-6">
-                    <h1 className="text-3xl md:text-4xl font-serif font-bold text-center text-[#1e3a8a] mb-3 px-2">
-                        Como está o tempo em{" "}
-                        <span className="text-[#1e40af]">
-                            {carregando ? "localizando..." : (municipio || "sua região")}?
-                        </span>
-                    </h1>
-                    <p className="text-center text-gray-600 mb-10 md:mb-12 text-sm md:text-base">
-                        Dados climáticos em tempo real
-                    </p>
+            {/* Renderiza a aba geral (Para Você) */}
+            {abaAtiva === "geral" && (
+                <ParaVoce
+                    latitudeUsuario={latitudeUsuario}
+                    longitudeUsuario={longitudeUsuario}
+                    carregando={carregando}
+                    municipioUsuario={municipioUsuario}
+                    bairroUsuario={bairroUsuario}
+                    informacoesClimaticasAtuais={informacoesClimaticasAtuais}
+                    historicoClimatico={historicoClimatico}
+                    mediasHistoricas={mediasHistoricas}
+                    riscoAlagamento={riscoAlagamento}
+                    melhorHoraPraia={melhorHoraPraiaFormatada}
+                />
+            )}
 
-                    <section className="grid grid-cols-2 sm:grid-cols-3 gap-4 md:gap-8">
-                        <CardClimaticoAtual nome="Temperatura" dado={Temperatura} unidade="°C" descricao={carregando ? "Carregando..." : "Buscando temperatura..."} />
-                        <CardClimaticoAtual nome="Sensação Térmica" dado={tempAparente} unidade="°C" descricao={carregando ? "Carregando..." : "Buscando sensação térmica..."} />
-                        <CardClimaticoAtual nome="Umidade" dado={Umidade} unidade="%" descricao={carregando ? "Carregando..." : "Buscando umidade..."} />
-                        <CardClimaticoAtual nome="Velocidade do Vento" dado={velocidadeVento} unidade=" km/h" descricao={carregando ? "Carregando..." : "Buscando velocidade do vento..."} />
-                        <CardClimaticoAtual nome="Precipitação" dado={Precipitação} unidade=" mm" descricao={carregando ? "Carregando..." : "Buscando precipitação..."} />
-                        <CardClimaticoAtual nome="Chuva" dado={Chuva} unidade=" mm" descricao={carregando ? "Carregando..." : "Buscando chuva..."} />
-                    </section>
-                </div>
-            </section>
+            {/* Renderiza a aba específica para pescadores */}
+            {abaAtiva === "pescador" && (
+                <ParaPescadores
+                    carregando={carregando}
+                    municipio={municipioUsuario}
+                    bairro={bairroUsuario}
+                    condicaoPesca={condicaoPesca}
+                    velocidadeVento={informacoesClimaticasAtuais["Velocidade do vento"]}
+                    riscoAlagamento={riscoAlagamento}
+                />
+            )}
 
-            <section className="px-4 md:px-6 pb-20 space-y-8 md:space-y-12">
-                <div className="max-w-5xl mx-auto bg-white border-4 border-[#1e40af] rounded-3xl shadow-xl p-6 md:p-8">
-                    <h2 className="text-center font-serif text-2xl md:text-3xl font-bold text-[#1e3a8a] mb-8 md:mb-10 tracking-wide">
-                        Histórico Climatológico
-                    </h2>
-                    <div className="space-y-10 md:space-y-12">
-                        <GraficoLinha dados={historicoClimatico} tipo="temperature_2m" descrisao="Temperatura" />
-                        <GraficoLinha dados={historicoClimatico} tipo="relative_humidity_2m" descrisao="Umidade do Ar" />
-                        <GraficoLinha dados={historicoClimatico} tipo="apparent_temperature" descrisao="Temperatura Aparente" />
-                        <GraficoLinha dados={historicoClimatico} tipo="rain" descrisao="Chuva" />
-                        <GraficoLinha dados={historicoClimatico} tipo="precipitation_probability" descrisao="Possibilidade de Precipitação" />
-                    </div>
-                </div>
-                
-                <div className="max-w-5xl mx-auto">
-                    <MapaTermico 
-                        dados={historicoClimatico} 
-                        tipo="temperature_2m" 
-                        descricao="Mapa Térmico" 
-                    />
-                </div>
-            </section>
-
-            <footer className="bg-[#1e3a8a] text-white py-8 text-center">
-                <div className="max-w-5xl mx-auto px-4">
-                    <p className="text-sm opacity-90">
-                        Tempo Ilha — Informações climáticas da Ilha do Maranhão
-                    </p>
-                    <p className="mt-2 text-sm">
-                        Desenvolvido por{' '}
-                        <a 
-                            href="https://github.com/JulioCesra" 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="hover:underline font-medium"
-                        >
-                            @JulioCesra
-                        </a>
-                    </p>
-                    <p className="text-xs mt-4 opacity-70">
-                        Utiliza APIs públicas • Dados meteorológicos via Open-Meteo
-                    </p>
-                </div>
-            </footer>
+            <Rodape />
         </>
     );
 }

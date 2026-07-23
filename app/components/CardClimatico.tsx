@@ -1,11 +1,11 @@
-interface CardClimaticoAtualProps {
+interface CardClimaticoProps {
     nome: string;
     dado?: number;
     descricao: string;
     unidade?: string;
 }
 
-export default function CardClimaticoAtual({ nome, dado, descricao, unidade }: CardClimaticoAtualProps) {
+export default function CardClimatico({ nome, dado, descricao, unidade }: CardClimaticoProps) {
     return (
         <article className="group flex flex-col justify-center items-center bg-white border-2 border-[#1e40af] hover:border-[#3b82f6] p-8 rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 w-full h-full min-h-[180px] relative overflow-hidden">
             
